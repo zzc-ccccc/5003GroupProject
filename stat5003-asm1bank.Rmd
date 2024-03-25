@@ -1,0 +1,381 @@
+---
+title: "Stat5003-asm1-bank"
+author: '490169971'
+date: "2024-03-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(caret)
+library(dplyr)
+library(e1071)
+library(randomForest)
+library(class)
+library(MASS)
+
+```
+#问题概述
+```{r}
+bank1 <- read.csv("/Users/zhanghaochen/Downloads/bank+marketing/bank-additional-full.csv")
+bank2<-read.csv("/Users/zhanghaochen/Downloads/bank+marketing/bank-full.csv")
+```
+#数据概述部分
+```{r}
+bank1
+```
+
+```{r}
+bank2
+```
+#数据处理部分（合并数据）
+```{r}
+common_columns <- intersect(names(bank1), names(bank2))
+bank1_common <- bank1[, common_columns]
+bank2_common <- bank2[, common_columns]
+bank_combined <- rbind(bank1_common, bank2_common)
+bank_combined
+```
+#数据处理部分（数据格式统一）
+```{r}
+
+
+bank_combined <- bank_combined %>%
+  mutate(education = case_when(
+    education %in% c("basic.4y","primary") ~ "primary",
+    education %in% c("basic.6y", "basic.9y","secondary","high.school", "professional.course") ~ "secondary",
+    education == c("university.degree","tertiary") ~ "tertiary",
+    TRUE ~ "unknown"
+  ))
+bank_combined$pdays[bank_combined$pdays == 999] <- -1
+
+bank_combined
+```
+#数据处理部分（查看是否有缺失值）
+```{r}
+na_counts <- sapply(bank_combined, function(x) sum(is.na(x)))
+na_counts
+```
+#数据处理部分 （数据归一化）
+```{r}
+columns_to_normalize <- c('duration',"age","campaign")
+df<-bank_combined
+df[columns_to_normalize] <- lapply(df[columns_to_normalize], function(x) {
+  (x - min(x, na.rm = TRUE)) / (max(x, na.rm = TRUE) - min(x, na.rm = TRUE))
+})
+df
+```
+#outlier部分
+
+#histograms/density部分
+
+#Are there features that are highly correlated （jackey部分）
+```{r}
+set.seed(5003)
+df$y <- as.factor(df$y)
+partition <- createDataPartition(y = df$y, p = 0.75, list = FALSE)
+trainSet <- df[partition, ]
+testSet <- df[-partition, ]
+```
+
+```{r}
+print("trainSet shape")
+print(dim(trainSet))
+print("testSet shape")
+print(dim(testSet))
+```
+
+```{r}
+set.seed(100)
+rf_model <- randomForest(y ~ ., data = trainSet)
+importance <- importance(rf_model)
+importance
+```
+```{r}
+summary(model)
+```
+```{r}
+features <- c("age", "duration", "month", "pdays")
+two_feature_combinations <- combn(features, 2, simplify = FALSE)
+feature_combinations_strings <- sapply(two_feature_combinations, function(x) paste(x, collapse = "+"))
+all_combinations <- c(features, feature_combinations_strings)
+print(length(all_combinations))
+
+```
+```{r}
+result_list<-c()
+feature_list<-c()
+model_list<-c()
+f1_list<-c()
+```
+glm
+```{r}
+set.seed(123)
+n <- nrow(trainSet)
+indices <- sample(1:n)
+fold_size <- round(n / 5)
+original_trainSet <- trainSet 
+results <- vector("numeric", 5)  
+
+for(feature in all_combinations){
+  feature_list<-c(feature_list,feature)
+  model_list<-c(model_list,"Logistic Regression")
+  formula <- as.formula(paste("y ~", paste(feature)))
+  for(i in 1:5) {
+    test_indices <- indices[((i-1) * fold_size + 1):min(i * fold_size, n)] 
+    
+    validSet <- original_trainSet[test_indices, ]
+    trainSubset <- original_trainSet[-test_indices, ]
+    
+    model <- glm(formula, data = trainSubset, family = binomial)
+    predictions <- predict(model, validSet, type = "response")
+    predicted_classes <- ifelse(predictions > 0.5, "yes", "no")
+    correct_predictions <- sum(predicted_classes == validSet$y)
+    accuracy <- correct_predictions / nrow(validSet)
+    results[i] <- accuracy
+  }
+  print(formula)
+  print("validation accuracy")
+  average_performance <- mean(results)
+  print(average_performance)
+  predictions <- predict(model, testSet, type = "response")
+  predicted_classes <- ifelse(predictions > 0.5, "yes", "no")
+  predictions<-predicted_classes
+  conf_table <- table(Predicted = predictions, Actual = testSet$y)
+  predictions <- factor(predictions, levels = levels(testSet$y))
+  conf_matrix <- confusionMatrix(predictions, testSet$y)
+  accuracy <- conf_matrix$overall['Accuracy']
+  result_list<-c(result_list,accuracy)
+  print("test accuracy")
+  print(accuracy)
+  print("random forest table")
+  print(conf_table)
+  print(conf_matrix)
+  f1_list<-c(f1_list,as.numeric(conf_matrix$byClass["F1"]))
+}
+
+
+
+
+
+
+```
+svm
+```{r}
+set.seed(123)
+n <- nrow(trainSet)
+indices <- sample(1:n)
+fold_size <- round(n / 5)
+original_trainSet <- trainSet 
+results <- vector("numeric", 5)  
+
+for(feature in all_combinations){
+  feature_list<-c(feature_list,feature)
+  model_list<-c(model_list,"SVM")
+  formula <- as.formula(paste("y ~", paste(feature)))
+  for(i in 1:5) {
+    test_indices <- indices[((i-1) * fold_size + 1):min(i * fold_size, n)] 
+    
+    validSet <- original_trainSet[test_indices, ]
+    trainSubset <- original_trainSet[-test_indices, ]
+    
+    svm_model <- svm(formula, data = trainSubset)
+    predictions <- predict(svm_model, validSet)
+  
+    accuracy <- sum(predictions == validSet$y) / nrow(validSet)
+    results[i] <- accuracy
+  }
+  print(formula)
+  print("validation accuracy")
+  average_performance <- mean(results)
+  print(average_performance)
+  predictions <- predict(svm_model, newdata = testSet)
+  conf_table <- table(Predicted = predictions, Actual = testSet$y)
+  
+  predictions <- factor(predictions, levels = levels(testSet$y))
+  conf_matrix <- confusionMatrix(predictions, testSet$y)
+  accuracy <- conf_matrix$overall['Accuracy']
+  result_list<-c(result_list,accuracy)
+  print("test accuracy")
+  print(accuracy)
+  print("random forest table")
+  print(conf_table)
+  print(conf_matrix)
+  f1_list<-c(f1_list,as.numeric(conf_matrix$byClass["F1"]))
+}
+
+
+
+
+
+
+```
+
+randomforest
+```{r}
+set.seed(125)
+n <- nrow(trainSet)
+indices <- sample(1:n)
+fold_size <- round(n / 5)
+original_trainSet <- trainSet 
+results <- vector("numeric", 5)  
+
+for(feature in all_combinations){
+  feature_list<-c(feature_list,feature)
+  model_list<-c(model_list,"Random Forest")
+  formula <- as.formula(paste("y ~", paste(feature)))
+  for(i in 1:5) {
+    test_indices <- indices[((i-1) * fold_size + 1):min(i * fold_size, n)] 
+    
+    validSet <- original_trainSet[test_indices, ]
+    trainSubset <- original_trainSet[-test_indices, ]
+    
+    rf_model <- randomForest(formula, data = trainSubset)
+    predictions <- predict(rf_model, validSet)
+  
+    accuracy <- sum(predictions == validSet$y) / nrow(validSet)
+    results[i] <- accuracy
+  }
+  print(formula)
+  print("validation accuracy")
+  average_performance <- mean(results)
+  print(average_performance)
+  
+  predictions <- predict(rf_model, newdata = testSet)
+  conf_table <- table(Predicted = predictions, Actual = testSet$y)
+  
+  predictions <- factor(predictions, levels = levels(testSet$y))
+  conf_matrix <- confusionMatrix(predictions, testSet$y)
+  accuracy <- conf_matrix$overall['Accuracy']
+  result_list<-c(result_list,accuracy)
+  print("test accuracy")
+  print(accuracy)
+  print("random forest table")
+  print(conf_table)
+  print(conf_matrix)
+  f1_list<-c(f1_list,as.numeric(conf_matrix$byClass["F1"]))
+  #print("test accuracy")
+  #predictions <- predict(rf_model, testSet)
+  #accuracy <- sum(predictions == testSet$y) / nrow(testSet)
+  #print(accuracy)
+}
+
+
+
+
+
+
+```
+
+
+knn
+```{r}
+set.seed(126) 
+n <- nrow(trainSet)
+indices <- sample(1:n)
+fold_size <- round(n / 5)
+
+results <- vector("numeric", 5) 
+for(i in 1:5) {
+  test_indices <- indices[((i-1) * fold_size + 1):min(i * fold_size, n)] 
+  train_indices <- setdiff(1:n, test_indices)
+  
+  trainSubset <- trainSet[train_indices, ]
+  validSet <- trainSet[test_indices, ]
+  
+  predictions <- knn(train = trainSubset[, "duration", drop = FALSE],
+                     test = validSet[, "duration", drop = FALSE],
+                     cl = trainSubset$y,
+                     k = 3)
+  
+  accuracy <- sum(predictions == validSet$y) / length(validSet$y)
+  results[i] <- accuracy
+}
+
+average_performance <- mean(results)
+print(average_performance)
+```
+
+lda
+```{r}
+set.seed(127) 
+n <- nrow(trainSet)
+indices <- sample(1:n)
+fold_size <- round(n / 5)
+
+original_trainSet <- trainSet 
+results <- vector("numeric", 5) 
+
+for(feature in all_combinations){
+  feature_list<-c(feature_list,feature)
+  model_list<-c(model_list,"LDA")
+  formula <- as.formula(paste("y ~", paste(feature)))
+  lda_model <- train(formula, data = trainSet, method = "lda",  
+                 trControl = trainControl(method = "repeatedcv", repeats = 1))
+  print(formula)
+  print("validation accuracy")
+  average_performance <- lda_model$results$Accuracy
+  print(average_performance)
+  predictions <- predict(lda_model, testSet)
+  conf_table <- table(Predicted = predictions, Actual = testSet$y)
+  predictions <- factor(predictions, levels = levels(testSet$y))
+  conf_matrix <- confusionMatrix(predictions, testSet$y)
+  accuracy <- conf_matrix$overall['Accuracy']
+  result_list<-c(result_list,accuracy)
+  print("test accuracy")
+  print(accuracy)
+  print("random forest table")
+  print(conf_table)
+  print(conf_matrix)
+  f1_list<-c(f1_list,as.numeric(conf_matrix$byClass["F1"]))
+  
+}
+```
+
+```{r}
+results_df <- data.frame(Model = model_list, 
+                         Features = feature_list, 
+                         Accuracy = result_list
+                         )
+results_df
+```
+
+```{r}
+library(plotly)
+results_long <- reshape2::melt(results_df, id.vars = c("Model", "Features"), variable.name = "Accuracy")
+p <- plot_ly(data = results_long, x = ~Model, y = ~Features, z = ~value, type = "heatmap", colorscale = "Viridis") %>%
+  layout(yaxis = list(title = "Feature Combination"), 
+         xaxis = list(title = "Model"),
+         title = "Accuracy Heatmap")
+p
+```
+```{r}
+results_f1_df <- data.frame(Model = model_list, 
+                         Features = feature_list, 
+                         f1_score = f1_list
+                         )
+results_f1_df
+```
+```{r}
+results_long <- reshape2::melt(results_f1_df, id.vars = c("Model", "Features"), variable.name = "f1_score")
+p <- plot_ly(data = results_long, x = ~Model, y = ~Features, z = ~value, type = "heatmap", colorscale = "Viridis") %>%
+  layout(yaxis = list(title = "Feature Combination"), 
+         xaxis = list(title = "Model"),
+         title = "F1-score Heatmap")
+p
+```
+
+```{r}
+lda_model
+print("##########lda_model##########")
+predictions <- predict(lda_model, newdata = testSet)
+conf_table <- table(Predicted = predictions, Actual = testSet$y)
+print(conf_table)
+accuracy <- sum(diag(conf_table)) / sum(conf_table)
+print(paste("Accuracy:", accuracy))
+predictions <- factor(predictions, levels = levels(testSet$y))
+conf_matrix <- confusionMatrix(predictions, testSet$y)
+print(conf_matrix)
+accuracy <- conf_matrix$overall['Accuracy']
+print(paste("Accuracy:", accuracy))
+```
